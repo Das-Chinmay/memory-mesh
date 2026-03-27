@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from memory_mesh.config import Config
+from memory_mesh.core.conflict import ConflictDetector
 from memory_mesh.core.models import Conflict, MemoryEntry, Resolution
 from memory_mesh.storage.chroma import ChromaAdapter
 from memory_mesh.storage.sqlite import SQLiteAdapter
@@ -15,7 +16,7 @@ class MemoryStore:
         self.config = config
         self.sqlite = SQLiteAdapter(config.db_path)
         self.chroma = ChromaAdapter(config.chroma_path, embedding_function=embedding_function)
-        self._detector = None  # injected in Task 10
+        self._detector = ConflictDetector(config)
 
     def connect(self) -> None:
         self.sqlite.connect()

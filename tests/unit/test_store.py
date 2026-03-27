@@ -52,3 +52,31 @@ def test_delete_existing_entry(store):
 
 def test_delete_nonexistent_returns_false(store):
     assert store.delete("ghost-id") is False
+
+
+def test_save_detects_key_conflict(store):
+    store.save(content="Go is best", agent_id="claude", key="lang")
+    entry, conflicts = store.save(content="Python is best", agent_id="chatgpt", key="lang")
+    assert len(conflicts) == 1
+    assert conflicts[0].trigger == "key_match"
+    assert conflicts[0].status == "pending"
+
+
+def test_list_conflicts_returns_pending(store):
+    store.save(content="Go is best", agent_id="claude", key="lang")
+    store.save(content="Python is best", agent_id="chatgpt", key="lang")
+    pending = store.list_conflicts(status="pending")
+    assert len(pending) == 1
+    assert pending[0].memory_a is not None
+    assert pending[0].memory_b is not None
+
+
+def test_resolve_conflict(store):
+    store.save(content="Go is best", agent_id="claude", key="lang")
+    _, conflicts = store.save(content="Python is best", agent_id="chatgpt", key="lang")
+    conflict = conflicts[0]
+    resolution = Resolution(conflict_id=conflict.id, winning_id=conflict.memory_a_id,
+                            resolved_by="cli")
+    resolved = store.resolve_conflict(resolution)
+    assert resolved.status == "resolved"
+    assert resolved.resolution_id == conflict.memory_a_id
