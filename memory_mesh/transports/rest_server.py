@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -19,7 +21,7 @@ class SaveRequest(BaseModel):
 
 class ResolveRequest(BaseModel):
     winning_id: str
-    resolved_by: str = "rest"
+    resolved_by: Literal["cli", "mcp", "rest"] = "rest"
 
 
 def make_app(store: MemoryStore, config: Config | None = None) -> FastAPI:
@@ -72,9 +74,12 @@ def make_app(store: MemoryStore, config: Config | None = None) -> FastAPI:
         resolution = Resolution(
             conflict_id=conflict_id,
             winning_id=req.winning_id,
-            resolved_by=req.resolved_by,  # type: ignore[arg-type]
+            resolved_by=req.resolved_by,
         )
-        conflict = store.resolve_conflict(resolution)
+        try:
+            conflict = store.resolve_conflict(resolution)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
         return conflict.model_dump(mode="json")
 
     @app.delete("/v1/memories/{memory_id}")

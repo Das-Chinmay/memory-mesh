@@ -40,12 +40,21 @@ class SQLiteAdapter:
                 "SELECT version FROM schema_migrations WHERE version = ?", (version,)
             ).fetchone()
             if row is None:
-                self.conn.executescript(sql_file.read_text())
-                self.conn.execute(
-                    "INSERT INTO schema_migrations VALUES (?, ?)",
-                    (version, datetime.now(timezone.utc).isoformat()),
-                )
-                self.conn.commit()
+                sql = sql_file.read_text()
+                self.conn.execute("BEGIN")
+                try:
+                    for statement in sql.split(";"):
+                        stmt = statement.strip()
+                        if stmt:
+                            self.conn.execute(stmt)
+                    self.conn.execute(
+                        "INSERT INTO schema_migrations VALUES (?, ?)",
+                        (version, datetime.now(timezone.utc).isoformat()),
+                    )
+                    self.conn.execute("COMMIT")
+                except Exception:
+                    self.conn.execute("ROLLBACK")
+                    raise
 
     # --- Memories ---
 
@@ -120,6 +129,18 @@ class SQLiteAdapter:
         return [_row_to_conflict(r) for r in rows]
 
     def resolve_conflict(self, resolution: Resolution) -> Conflict:
+        # Validate the conflict exists and winning_id is valid
+        row = self.conn.execute(
+            "SELECT * FROM conflicts WHERE id = ?", (resolution.conflict_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Conflict not found: {resolution.conflict_id}")
+        if resolution.winning_id not in (row["memory_a_id"], row["memory_b_id"]):
+            raise ValueError(
+                f"winning_id must be memory_a_id or memory_b_id of the conflict, "
+                f"got: {resolution.winning_id}"
+            )
+
         now = datetime.now(timezone.utc).isoformat()
         self.conn.execute(
             "UPDATE conflicts SET status='resolved', resolution_id=?, resolved_by=?, resolved_at=? "
