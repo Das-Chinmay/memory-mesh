@@ -145,3 +145,47 @@ def test_layer2_dedup_against_layer1():
     sqlite.get_by_id = MagicMock(return_value=existing)
     conflicts = detector.check(new, sqlite, chroma)
     assert len(conflicts) == 1
+
+
+from unittest.mock import patch
+
+# --- Layer 3: NLI (opt-in) ---
+
+def test_layer3_skipped_when_nli_disabled():
+    detector = ConflictDetector(Config(nli_enabled=False, similarity_threshold=0.85,
+                                      diff_ratio_threshold=0.20))
+    new = make_entry(id="new", content="The sky is blue")
+    existing = make_entry(id="old", content="The sky is not blue")
+    chroma = make_chroma(neighbors=[("old", 0.92)])
+    sqlite = make_sqlite()
+    sqlite.get_by_id = MagicMock(return_value=existing)
+    with patch("memory_mesh.core.conflict.ConflictDetector._run_nli") as mock_nli:
+        detector.check(new, sqlite, chroma)
+        mock_nli.assert_not_called()
+
+
+def test_layer3_fires_when_nli_enabled_and_contradiction_found():
+    detector = ConflictDetector(Config(nli_enabled=True, similarity_threshold=0.85,
+                                      diff_ratio_threshold=0.20))
+    new = make_entry(id="new", content="Paris is the capital of Germany")
+    existing = make_entry(id="old", content="Berlin is the capital of Germany")
+    chroma = make_chroma(neighbors=[("old", 0.91)])
+    sqlite = make_sqlite()
+    sqlite.get_by_id = MagicMock(return_value=existing)
+    with patch.object(detector, "_run_nli", return_value=True):
+        conflicts = detector.check(new, sqlite, chroma)
+    nli_conflicts = [c for c in conflicts if c.trigger == "nli"]
+    assert len(nli_conflicts) >= 1
+
+
+def test_layer3_no_conflict_when_nli_returns_no_contradiction():
+    detector = ConflictDetector(Config(nli_enabled=True, similarity_threshold=0.85,
+                                      diff_ratio_threshold=0.20))
+    new = make_entry(id="new", content="Cats are mammals")
+    existing = make_entry(id="old", content="Dogs are mammals")
+    chroma = make_chroma(neighbors=[("old", 0.88)])
+    sqlite = make_sqlite()
+    sqlite.get_by_id = MagicMock(return_value=existing)
+    with patch.object(detector, "_run_nli", return_value=False):
+        conflicts = detector.check(new, sqlite, chroma)
+    assert all(c.trigger != "nli" for c in conflicts)
