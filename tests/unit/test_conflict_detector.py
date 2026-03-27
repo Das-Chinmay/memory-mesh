@@ -73,3 +73,75 @@ def test_layer1_dedup_skips_existing_pending_conflict():
     sqlite = make_sqlite(existing_by_key=[existing], conflict_exists=True)
     conflicts = detector.check(new, sqlite, make_chroma())
     assert conflicts == []
+
+
+import difflib
+
+# --- Layer 2: Similarity Threshold ---
+
+def test_layer2_no_conflict_below_similarity_threshold():
+    detector = ConflictDetector(Config(similarity_threshold=0.85))
+    new = make_entry(id="new", content="Python is great")
+    existing = make_entry(id="old", content="completely different topic altogether")
+    chroma = make_chroma(neighbors=[("old", 0.3)])
+    sqlite = make_sqlite(existing_by_key=[])
+    sqlite.get_by_id = MagicMock(return_value=existing)
+    conflicts = detector.check(new, sqlite, chroma)
+    assert conflicts == []
+
+
+def test_layer2_conflict_when_similar_but_different_content():
+    detector = ConflictDetector(Config(similarity_threshold=0.85, diff_ratio_threshold=0.20))
+    new = make_entry(id="new", content="Python is the best programming language")
+    existing = make_entry(id="old", content="Go is the best programming language")
+    chroma = make_chroma(neighbors=[("old", 0.92)])
+    sqlite = make_sqlite()
+    sqlite.get_by_id = MagicMock(return_value=existing)
+    conflicts = detector.check(new, sqlite, chroma)
+    assert len(conflicts) == 1
+    assert conflicts[0].trigger == "similarity"
+
+
+def test_layer2_skips_same_agent_same_session():
+    detector = ConflictDetector(Config(similarity_threshold=0.85))
+    new = make_entry(id="new", content="Python is best", agent_id="claude", session_id="s1")
+    existing = make_entry(id="old", content="Python is great", agent_id="claude", session_id="s1")
+    chroma = make_chroma(neighbors=[("old", 0.95)])
+    sqlite = make_sqlite()
+    sqlite.get_by_id = MagicMock(return_value=existing)
+    conflicts = detector.check(new, sqlite, chroma)
+    assert conflicts == []
+
+
+def test_layer2_does_not_skip_different_session_same_agent():
+    detector = ConflictDetector(Config(similarity_threshold=0.85, diff_ratio_threshold=0.20))
+    new = make_entry(id="new", content="Python is the best language", agent_id="claude", session_id="s2")
+    existing = make_entry(id="old", content="Go is the best language", agent_id="claude", session_id="s1")
+    chroma = make_chroma(neighbors=[("old", 0.92)])
+    sqlite = make_sqlite()
+    sqlite.get_by_id = MagicMock(return_value=existing)
+    conflicts = detector.check(new, sqlite, chroma)
+    assert len(conflicts) == 1
+
+
+def test_layer2_does_not_skip_same_session_different_agent():
+    detector = ConflictDetector(Config(similarity_threshold=0.85, diff_ratio_threshold=0.20))
+    new = make_entry(id="new", content="Python is the best language", agent_id="claude", session_id="s1")
+    existing = make_entry(id="old", content="Go is the best language", agent_id="chatgpt", session_id="s1")
+    chroma = make_chroma(neighbors=[("old", 0.92)])
+    sqlite = make_sqlite()
+    sqlite.get_by_id = MagicMock(return_value=existing)
+    conflicts = detector.check(new, sqlite, chroma)
+    assert len(conflicts) == 1
+
+
+def test_layer2_dedup_against_layer1():
+    """Same pair caught by Layer 1 should not appear again in Layer 2."""
+    detector = ConflictDetector(Config(similarity_threshold=0.85, diff_ratio_threshold=0.20))
+    new = make_entry(id="new", key="lang", content="Python is the best language")
+    existing = make_entry(id="old", key="lang", content="Go is the best language")
+    chroma = make_chroma(neighbors=[("old", 0.92)])
+    sqlite = make_sqlite(existing_by_key=[existing])
+    sqlite.get_by_id = MagicMock(return_value=existing)
+    conflicts = detector.check(new, sqlite, chroma)
+    assert len(conflicts) == 1

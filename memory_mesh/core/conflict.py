@@ -37,6 +37,29 @@ class ConflictDetector:
                 seen_pairs.add(pair)
                 conflicts.append(_make_conflict(new_entry.id, existing.id, "key_match"))
 
+        # Layer 2: Similarity threshold
+        neighbors = chroma.search(new_entry.content, limit=5)
+        for mem_id, similarity in neighbors:
+            if mem_id == new_entry.id:
+                continue
+            if similarity < self.config.similarity_threshold:
+                continue
+            existing = sqlite.get_by_id(mem_id)
+            if existing is None:
+                continue
+            # Same agent + same session = update, not conflict
+            if (
+                existing.agent_id == new_entry.agent_id
+                and existing.session_id is not None
+                and existing.session_id == new_entry.session_id
+            ):
+                continue
+            pair = _sorted_pair(new_entry.id, mem_id)
+            if pair in seen_pairs or sqlite.conflict_exists(*pair):
+                continue
+            seen_pairs.add(pair)
+            conflicts.append(_make_conflict(new_entry.id, mem_id, "similarity"))
+
         return conflicts
 
     def _run_nli(self, text_a: str, text_b: str) -> bool:
