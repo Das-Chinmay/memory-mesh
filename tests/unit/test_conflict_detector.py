@@ -169,7 +169,8 @@ def test_layer3_fires_when_nli_enabled_and_contradiction_found():
                                       diff_ratio_threshold=0.20))
     new = make_entry(id="new", content="Paris is the capital of Germany")
     existing = make_entry(id="old", content="Berlin is the capital of Germany")
-    chroma = make_chroma(neighbors=[("old", 0.91)])
+    # Use 0.84 to be below the 0.85 threshold so Layer 2 doesn't match
+    chroma = make_chroma(neighbors=[("old", 0.84)])
     sqlite = make_sqlite()
     sqlite.get_by_id = MagicMock(return_value=existing)
     with patch.object(detector, "_run_nli", return_value=True):

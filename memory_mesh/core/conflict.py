@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import difflib
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -62,11 +61,8 @@ class ConflictDetector:
 
         # Layer 3: NLI contradiction (opt-in)
         if self.config.nli_enabled:
-            seen_pairs_nli: set[tuple[str, str]] = set()
             for mem_id, similarity in neighbors:
                 if mem_id == new_entry.id:
-                    continue
-                if similarity < self.config.similarity_threshold:
                     continue
                 existing = sqlite.get_by_id(mem_id)
                 if existing is None:
@@ -79,10 +75,10 @@ class ConflictDetector:
                 ):
                     continue
                 pair = _sorted_pair(new_entry.id, mem_id)
-                if pair in seen_pairs_nli or sqlite.conflict_exists(*pair):
+                if pair in seen_pairs or sqlite.conflict_exists(*pair):
                     continue
                 if self._run_nli(new_entry.content, existing.content):
-                    seen_pairs_nli.add(pair)
+                    seen_pairs.add(pair)
                     conflicts.append(_make_conflict(new_entry.id, mem_id, "nli"))
 
         return conflicts
