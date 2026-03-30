@@ -49,7 +49,7 @@ def serve(host: str | None, port: int | None, auth: bool, config_path: str | Non
     if ts["running"]:
         click.echo(f"Tailscale: reachable at {ts['ip']}:{cfg.port} from any device on your tailnet")
     else:
-        click.echo("Tailscale: not detected  →  install tailscale.com for remote access")
+        click.echo("Tailscale: not detected  ->  install tailscale.com for remote access")
 
     # Windows note: on hard Ctrl+C the finally block may not run.
     # Orphaned mDNS records expire automatically after 120s.
